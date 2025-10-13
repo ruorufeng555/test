@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial chartset=UTF-8">
+    <title>Webview 测试页面</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+        h1 { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Hello, Webview!</h1>
+    <p>如果你的 App 的 Webview 正确加载了这个页面，说明测试成功！</p>
+    <p>当前时间：<span id="datetime"></span></p>
+    <script>
+        document.getElementById('datetime').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>
