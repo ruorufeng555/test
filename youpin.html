@@ -1,0 +1,18 @@
+    <script>
+            // 1. 初始化
+location.href = "wvjbscheme://__BRIDGE_LOADED__";
+
+// 2. 定义核心方法
+WebViewJavascriptBridge = {
+    _handleMessageFromJava: function (message) {
+        console.log('Received from Java:', message);
+        alert(message);
+    },
+    _fetchQueue: function () {
+        // 3. 返回JSON字符串
+        return '[{"handlerName":"getUserInfo","data":{},"callbackId":""}]';
+    }
+};
+location.href = "wvjbscheme://__WVJB_QUEUE_MESSAGE__";
+			
+</script>
