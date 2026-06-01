@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>WebView PoC - Geolocation</title>
+<style>
+    :root{--bg:#efe7da;--paper:rgba(255,250,242,.96);--ink:#241d18;--muted:#71675f;--border:#d8c7b1;--a:#bf552d;--shadow:rgba(66,43,24,.08)}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,#f4dbc0 0,transparent 24%),radial-gradient(circle at top right,#d6ece5 0,transparent 22%),linear-gradient(180deg,#f7f0e4 0%,#efe7da 100%)}
+    .wrap{max-width:960px;margin:0 auto;padding:24px 16px 40px}
+    .panel{background:var(--paper);border:1px solid var(--border);border-radius:22px;box-shadow:0 18px 45px var(--shadow);padding:18px;margin-bottom:18px}
+    .panel h2{margin:0 0 12px}
+    .card{padding:14px;border:1px solid var(--border);border-radius:16px;background:#fff;margin-bottom:14px}
+    .card h3{margin:0 0 10px}
+    button{border:0;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;margin-right:10px;margin-bottom:10px}
+    .m{background:#7e776e}
+    .status{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#ece4d8;color:#584d45}
+    pre{margin:0;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;padding:16px;border:1px solid #3f372f;border-radius:14px;background:#0f0d0c;color:#f7f2eb;font-family:Consolas,"SFMono-Regular",Menlo,monospace;font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+    <section class="panel">
+        <h2>WebView PoC - Geolocation</h2>
+        <p style="color:var(--muted);line-height:1.7;">验证 WebView 是否未经用户授权即可获取精确地理位置。</p>
+    </section>
+
+    <section class="panel">
+        <h2>地理位置 <span class="status" id="geoStatus">idle</span></h2>
+        <button class="m" id="btnLocation">获取位置</button>
+        <div class="card"><h3>返回数据</h3><pre id="geoOutput">waiting...</pre></div>
+    </section>
+
+    <section class="panel">
+        <h2>日志</h2>
+        <pre id="log">waiting...</pre>
+    </section>
+</div>
+
+<script>
+var $=function(id){return document.getElementById(id)};
+var now=function(){return new Date().toISOString()};
+
+function log(m,d){
+    var line='['+now()+'] '+m;
+    var payload=d===undefined?'':'\n'+(typeof d==='string'?d:JSON.stringify(d,null,2));
+    $('log').textContent=line+payload+'\n\n'+($('log').textContent==='waiting...'?'':$('log').textContent);
+}
+log('page loaded',{href:location.href,secureContext:window.isSecureContext,userAgent:navigator.userAgent});
+
+$('btnLocation').addEventListener('click',function(){
+    log('request geolocation');
+    $('geoStatus').textContent='requesting';
+    if(!navigator.geolocation){
+        $('geoStatus').textContent='unsupported';
+        $('geoOutput').textContent='navigator.geolocation unavailable';
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(function(pos){
+        var r={latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,altitude:pos.coords.altitude,timestamp:pos.timestamp,isoTime:new Date(pos.timestamp).toISOString()};
+        $('geoOutput').textContent=JSON.stringify(r,null,2);
+        $('geoStatus').textContent='success';
+        log('geolocation success',r);
+    },function(err){
+        var r={code:err.code,message:err.message,time:now()};
+        $('geoOutput').textContent=JSON.stringify(r,null,2);
+        $('geoStatus').textContent='error';
+        log('geolocation error',r);
+    },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+});
+</script>
+</body>
+</html>
